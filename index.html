@@ -1,0 +1,361 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#f4f5ef">
+    <meta name="description" content="Qala Astana — Интеллектуальная рекомендательная система пешеходных городских маршрутов Астаны">
+    <title>Qala Astana — Интеллектуальный гид по городу</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <div class="app-shell">
+      <!-- Topbar Navigation -->
+      <header class="topbar">
+        <div class="brand-group">
+          <a class="brand" href="/" aria-label="Qala Astana">
+            <span class="brand-gem" aria-hidden="true">
+              <svg viewBox="0 0 32 32" fill="none">
+                <path d="M16 28s9-8.2 9-16a9 9 0 1 0-18 0c0 7.8 9 16 9 16Z" stroke="currentColor" stroke-width="2"/>
+                <circle cx="16" cy="12" r="3" fill="currentColor"/>
+              </svg>
+            </span>
+            <div class="brand-text">
+              <strong>Qala</strong>
+              <small>Городские прогулки · Астана</small>
+            </div>
+          </a>
+        </div>
+
+        <div class="topbar-meta">
+          <div class="status-pill" id="datasetStatusPill" title="База данных POI">
+            <span class="live-dot"></span>
+            <span id="datasetStatus">Загрузка базы мест…</span>
+          </div>
+
+          <div class="status-pill model-pill" id="modelStatusPill">
+            <span class="material-symbols-outlined icon-inline">psychology</span>
+            <span id="generationBadge">Локальный поиск + шаблоны</span>
+          </div>
+
+          <div class="status-pill astana-pill" id="astanaTimePill" title="Текущее местное время в Астане (UTC+5)">
+            <span class="material-symbols-outlined icon-inline" id="astanaPeriodIcon">schedule</span>
+            <span id="astanaTimeText">Астана</span>
+          </div>
+
+          <!-- Language Selector -->
+          <div class="lang-switch" role="group" aria-label="Выбор языка">
+            <button type="button" class="lang-btn active" data-lang="ru">RU</button>
+            <button type="button" class="lang-btn" data-lang="kk">KZ</button>
+            <button type="button" class="lang-btn" data-lang="en">EN</button>
+          </div>
+
+          <a href="/api/docs" target="_blank" class="docs-link-btn" title="Документация REST API (OpenAPI 3.0)">
+            <span class="material-symbols-outlined icon-inline">terminal</span>
+            <span>API Docs</span>
+          </a>
+
+          <button id="syncButton" class="sync-button" type="button" title="Обновить базу POI через Overpass API">
+            <span class="material-symbols-outlined icon-inline sync-icon">sync</span>
+            <span>Обновить POI</span>
+          </button>
+        </div>
+      </header>
+
+      <!-- Main Workspace -->
+      <main class="workspace">
+        <!-- Sidebar Controls & Results -->
+        <aside class="search-panel">
+          <div class="panel-scroll">
+            
+            <!-- Quick Scenarios Toolbar -->
+            <section class="preset-section">
+              <div class="section-label">
+                <span class="material-symbols-outlined icon-section">auto_awesome</span>
+                <span id="txtScenariosTitle">Быстрые сценарии:</span>
+              </div>
+              <div class="quick-presets" role="toolbar" aria-label="Сценарии поиска">
+                <button type="button" class="preset-chip" data-case="mega">
+                  <span class="material-symbols-outlined chip-sym">shopping_bag</span>
+                  <span>Mega Silk Way · 30–60 мин</span>
+                </button>
+                <button type="button" class="preset-chip" data-case="coffee">
+                  <span class="material-symbols-outlined chip-sym">local_cafe</span>
+                  <span>Кофе и розетка</span>
+                </button>
+                <button type="button" class="preset-chip" data-case="kids">
+                  <span class="material-symbols-outlined chip-sym">child_care</span>
+                  <span>С ребёнком</span>
+                </button>
+                <button type="button" class="preset-chip" data-case="airport">
+                  <span class="material-symbols-outlined chip-sym">flight_takeoff</span>
+                  <span>Перед вылетом</span>
+                </button>
+                <button type="button" class="preset-chip" data-case="night">
+                  <span class="material-symbols-outlined chip-sym">nightlife</span>
+                  <span>Ночная прогулка</span>
+                </button>
+                <button type="button" class="preset-chip lucky-chip" id="btnSurpriseMe" title="Случайный пример пользовательского сценария">
+                  <span class="material-symbols-outlined chip-sym">casino</span>
+                  <span>Случайный сценарий</span>
+                </button>
+              </div>
+            </section>
+
+            <!-- Search Form -->
+            <form id="recommendForm" class="search-form" autocomplete="off">
+              <!-- Mode Tabs -->
+              <div class="mode-tabs">
+                <button type="button" class="tab-btn active" data-mode="standard" id="tabStandard">
+                  <span class="material-symbols-outlined tab-icon">explore</span>
+                  <span id="txtTabStandard">Места рядом</span>
+                </button>
+                <button type="button" class="tab-btn" data-mode="mini_route" id="tabRoute">
+                  <span class="material-symbols-outlined tab-icon">route</span>
+                  <span id="txtTabRoute">Маршрут из 3 мест</span>
+                  <span class="badge-stretch">Стретч-цель</span>
+                </button>
+              </div>
+
+              <!-- Input Area -->
+              <div class="field-group">
+                <label class="field-label" for="queryInput" id="txtQueryLabel">Что вы ищете?</label>
+                <div class="query-wrap">
+                  <span class="material-symbols-outlined query-icon">search</span>
+              <textarea id="queryInput" rows="2" maxlength="500" placeholder="Опишите настроение, время или пожелания...">Я сейчас возле Mega Silk Way, хочу прогуляться 30–60 минут — что посоветуете?</textarea>
+                  <button id="clearQuery" class="clear-query" type="button" aria-label="Очистить" title="Очистить">
+                    <span class="material-symbols-outlined">close</span>
+                  </button>
+                </div>
+              </div>
+
+              <!-- Filters Grid -->
+              <div class="filters-grid">
+                <label class="filter-control">
+                  <span id="txtCategoryLabel">Категория</span>
+                  <select id="categorySelect">
+                    <option value="all" selected>Все категории</option>
+                    <option value="cafe">Кафе и кофейни</option>
+                    <option value="park">Парки и бульвары</option>
+                    <option value="playground">Детские площадки и зоны</option>
+                    <option value="museum">Музеи и галереи</option>
+                    <option value="attraction">Смотровые и символы города</option>
+                    <option value="restaurant">Еда и рестораны</option>
+                  </select>
+                </label>
+
+                <label class="filter-control">
+                  <span id="txtRadiusLabel">Радиус поиска</span>
+                  <select id="radiusSelect">
+                    <option value="1">1 км (пешком ~10–15 мин)</option>
+                    <option value="2" selected>2 км (пешком ~20–25 мин)</option>
+                    <option value="5">5 км (центр города)</option>
+                    <option value="8">8 км (расширенная зона)</option>
+                  </select>
+                </label>
+              </div>
+
+              <!-- Context Filter Toggles -->
+              <div class="feature-toggles">
+                <label class="toggle-pill" title="Предпочитает подходящие категории; вместимость места не проверяется">
+                  <input type="checkbox" id="filterGroup">
+                  <span class="toggle-track">
+                    <span class="material-symbols-outlined toggle-icon">groups</span>
+                    <span id="txtFilterGroup">Для компании (3–5 чел)</span>
+                  </span>
+                </label>
+
+                <label class="toggle-pill" title="Только явная отметка wheelchair=yes в OpenStreetMap; маршрут не проверяется">
+                  <input type="checkbox" id="filterAccessibility">
+                  <span class="toggle-track">
+                    <span class="material-symbols-outlined toggle-icon">accessible</span>
+                    <span id="txtFilterAccess">Доступная среда</span>
+                  </span>
+                </label>
+
+                <label class="toggle-pill" title="Предпочитает вечерние категории; часы и доступность уточните отдельно">
+                  <input type="checkbox" id="filterNight">
+                  <span class="toggle-track">
+                    <span class="material-symbols-outlined toggle-icon">bedtime</span>
+                    <span id="txtFilterNight">Вечер / Ночь</span>
+                  </span>
+                </label>
+
+                <label class="toggle-pill" title="Предпочитает категории площадок, парков и музеев; условия для детей не проверяются">
+                  <input type="checkbox" id="filterKids">
+                  <span class="toggle-track">
+                    <span class="material-symbols-outlined toggle-icon">child_care</span>
+                    <span id="txtFilterKids">С детьми</span>
+                  </span>
+                </label>
+              </div>
+
+              <label class="group-size-control" id="groupSizePicker" hidden>
+                <span id="txtGroupSizeLabel">Размер группы</span>
+                <select id="groupSizeSelect" aria-label="Размер группы">
+                  <option value="3">3</option>
+                  <option value="4" selected>4</option>
+                  <option value="5">5</option>
+                </select>
+              </label>
+
+              <!-- Location Selector -->
+              <div class="location-card">
+                <div class="location-info">
+                  <span class="material-symbols-outlined loc-pin-icon">location_on</span>
+                  <div>
+                    <strong id="locationTitle">Mega Silk Way / Expo · демо-старт</strong>
+                    <small id="locationCoordinates">51.0891° N, 71.4073° E</small>
+                  </div>
+                </div>
+                <div class="location-actions">
+                  <button id="locateButton" class="locate-btn" type="button" title="Определить координаты по GPS">
+                    <span class="material-symbols-outlined">my_location</span>
+                    <span>GPS</span>
+                  </button>
+                </div>
+              </div>
+
+              <label class="external-model-consent" for="externalModelConsent">
+                <input id="externalModelConsent" type="checkbox" disabled aria-describedby="txtExternalModelHelp">
+                <span class="external-model-copy">
+                  <strong id="txtExternalModelLabel">Разрешить внешнему ИИ переписать рекомендации</strong>
+                  <small id="txtExternalModelHelp">Внешняя модель не настроена; ответы создаются локально.</small>
+                </span>
+              </label>
+
+              <!-- Submit Action Button -->
+              <button id="recommendButton" class="action-submit-btn" type="submit">
+                <span class="btn-shine"></span>
+                <span id="txtSubmitBtn">Подобрать рекомендации</span>
+                <span class="material-symbols-outlined btn-arrow">arrow_forward</span>
+              </button>
+
+              <div class="privacy-note-bar">
+                <span class="material-symbols-outlined lock-icon">shield</span>
+                <span id="txtPrivacyLine">Точка не сохраняется; сведения о карте и внешних сервисах — ниже</span>
+              </div>
+
+              <details class="privacy-details">
+                <summary id="txtPrivacyDetailsLabel">Какие данные получают внешние сервисы</summary>
+                <ul>
+                  <li id="txtPrivacyLocationNote"></li>
+                  <li id="txtPrivacyMapNote"></li>
+                  <li id="txtPrivacyRoutingNote"></li>
+                  <li id="txtPrivacyNavigationNote"></li>
+                  <li id="txtPrivacyModelNote"></li>
+                </ul>
+              </details>
+
+              <a id="officialEventsLink" class="official-events-link" href="https://www.visitastana.kz/en/about-city/where-to-go/" target="_blank" rel="noopener noreferrer">
+                <span class="material-symbols-outlined">event</span>
+                <span class="official-events-copy">
+                  <strong id="txtOfficialEventsLabel">Открыть официальный календарь событий</strong>
+                  <small id="txtOfficialEventsHelp">Visit Astana · внешний сайт; проверяйте адрес и время у источника.</small>
+                </span>
+                <span class="material-symbols-outlined external-link-icon">open_in_new</span>
+              </a>
+            </form>
+
+            <!-- Results Section -->
+            <section class="results-section" aria-live="polite">
+              <div class="results-header">
+                <div>
+                  <h2 id="txtResultsTitle">Рекомендации <span id="resultCount"></span></h2>
+                  <p id="resultMeta" class="result-meta">Выберите параметры и нажмите «Подобрать»</p>
+                </div>
+                <div class="results-tools">
+                  <button type="button" id="btnShareRoute" class="tool-icon-btn" title="Скопировать ссылку с координатами старта">
+                    <span class="material-symbols-outlined">share</span>
+                    <span class="tool-label">Поделиться</span>
+                  </button>
+                  <button type="button" id="btnPrintRoute" class="tool-icon-btn" title="Распечатать маршрутный лист">
+                    <span class="material-symbols-outlined">print</span>
+                    <span class="tool-label">Печать</span>
+                  </button>
+                </div>
+              </div>
+
+              <!-- Mini-route Timeline Bar -->
+              <div id="routeTimelineContainer" class="route-timeline-card" hidden></div>
+
+              <!-- Cards Container -->
+              <div id="resultsList" class="results-list">
+                <div class="initial-state">
+                  <div class="pulse-ring"></div>
+                  <p>Выберите сценарий или отправьте запрос — покажем подходящие места, время и план прогулки.</p>
+                </div>
+              </div>
+            </section>
+          </div>
+
+          <footer class="panel-footer">
+            <span>Источники данных указаны у каждой рекомендации</span>
+            <span>OpenStreetMap · Overpass · данные могут устареть</span>
+          </footer>
+        </aside>
+
+        <!-- Interactive Map Panel -->
+        <section class="map-panel" aria-label="Интерактивная карта Астаны">
+          <div id="map" class="map-canvas"></div>
+
+          <!-- Floating Map Toolbar -->
+          <div class="map-overlay-top">
+            <div class="map-badge">
+              <span class="city-dot"></span>
+              <span><strong>Астана</strong> · Интерактивная карта</span>
+            </div>
+            
+            <div class="map-quick-jump">
+              <button type="button" class="jump-btn" data-loc="baiterek">Байтерек</button>
+              <button type="button" class="jump-btn" data-loc="expo">Expo / Сфера</button>
+              <button type="button" class="jump-btn" data-loc="mega">Mega Silk Way</button>
+              <button type="button" class="jump-btn" data-loc="shatyr">Хан Шатыр</button>
+              <button type="button" class="jump-btn" data-loc="airport">Аэропорт</button>
+            </div>
+
+            <!-- Map Layers & Radius Switcher -->
+            <div class="map-layer-selector">
+              <button type="button" class="layer-btn" data-layer="dark" title="Тёмная карта">
+                <span class="material-symbols-outlined layer-icon">dark_mode</span>
+                <span>Тёмная</span>
+              </button>
+              <button type="button" class="layer-btn active" data-layer="street" title="Карта улиц OpenStreetMap">
+                <span class="material-symbols-outlined layer-icon">map</span>
+                <span>Улицы</span>
+              </button>
+              <button type="button" class="layer-btn active" id="btnToggleRadius" title="Показать или скрыть окружность радиуса поиска">
+                <span class="material-symbols-outlined layer-icon">radar</span>
+                <span>Радиус</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Map Legend -->
+          <div class="map-legend">
+            <span class="legend-item"><i class="legend-dot origin"></i> Выбранная точка</span>
+            <span class="legend-item"><i class="legend-dot place"></i> Рекомендация</span>
+            <span class="legend-item"><i class="legend-line route"></i> Связь точек · схематично</span>
+          </div>
+
+          <div id="mapNotice" class="map-notice" role="status">
+            <span class="notice-pulse"></span>
+            <span id="mapNoticeText">Кликните в любую точку карты для переноса точки старта</span>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <!-- Toast Notification Container -->
+    <div id="toastContainer" class="toast-container" aria-live="polite"></div>
+
+    <!-- Scripts -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+    <script src="app.js"></script>
+  </body>
+</html>
